@@ -139,22 +139,24 @@ PDBDATA = new function() {
 	}
 };
 
+// Don't use String.trim. It works in FF but not in chrome.
+function trim(s) { return s.trim(); };
 var PDBFIELDNAMES = {
-        1: ["ATorHET", String.trim, ""],
+        1: ["ATorHET", trim, ""],
         2: ["serial", parseInt, NaN],
-        3: ["atom", String.trim, ""],
-        4: ["altloc", String.trim, ""],
-        5: ["resname",String.trim, ""],
-        6: ["chainid",String.trim, ""],
+        3: ["atom", trim, ""],
+        4: ["altloc", trim, ""],
+        5: ["resname",trim, ""],
+        6: ["chainid",trim, ""],
         7: ["resseq",parseInt, ""],
-        8: ["icode",String.trim, ""],
+        8: ["icode",trim, ""],
         9: ["x",parseFloat, NaN],
        10: ["y",parseFloat, NaN],
        11: ["z",parseFloat, NaN],
        12: ["occupancy",parseFloat, NaN],
        13: ["tempFactor",parseFloat, NaN],
        14: ["ignored",parseFloat, ""],
-       15: ["element",String.trim, ""],
+       15: ["element",trim, ""],
        16: ["charge",parseFloat, NaN],
     };
 
