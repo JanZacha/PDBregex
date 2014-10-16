@@ -15,10 +15,7 @@ ATOM   1319  CB  LYS A 188A     59.043  44.258  42.166  1.00 16.98           C
 ```
 
 The documentation of the PDB format can be found in the
-[official documentation](http://www.wwpdb.org/documentation/format33/v3.3.html). And the
-
-and the section about ATOM lines can be found [here](
-http://www.wwpdb.org/documentation/format33/sect9.html#ATOM)
+[official documentation](http://www.wwpdb.org/documentation/format33/v3.3.html). And the section about ATOM lines can be found [here](http://www.wwpdb.org/documentation/format33/sect9.html#ATOM).
 
 
 Issues with the PDB format
@@ -68,4 +65,7 @@ Maybe you should! For many applications this might be faster and allow for easie
 
 TODO
 ========
-Examples should follow.
+* More examples should follow.
+* Prepare testset of problematic PDB files
+* I am sure, I once stubmled over negative residue IDs...
+* Prepare true column-based parsing and compare speed
