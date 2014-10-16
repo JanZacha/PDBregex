@@ -17,6 +17,16 @@ ATOM   1319  CB  LYS A 188A     59.043  44.258  42.166  1.00 16.98           C
 The documentation of the PDB format can be found in the
 [official documentation](http://www.wwpdb.org/documentation/format33/v3.3.html). And the section about ATOM lines can be found [here](http://www.wwpdb.org/documentation/format33/sect9.html#ATOM).
 
+The Regular expressions
+========
+The version with named groups (in python syntax) reads
+
+`(?P<ATorHET>ATOM |HETATM)(?P<serial>[ \d]{5}).(?P<name>.{4})(?P<altloc>.)(?P<resname>.{3}).(?P<chainid>.)(?P<resseq>[ \-+\d]{4})(?P<icode>.).{3}(?P<x>[ \-+\.\d]{8})(?P<y>[ \-+\.\d]{8})(?P<z>[ \-+\.\d]{8})(?P<occupancy>[ \-+\.\d]{6})(?P<tempfactor>[ \-+\.\d]{6}).{10}(?P<element>.{2})(?P<charge>.{2})`
+
+and the JS-version (named groups are sadly not supported by JS) becomes
+`(ATOM |HETATM)([ \d]{5}).(.{4})(.)(.{3}).(.)([ \-+\d]{4})(.).{3}([ \-+\.\d]{8})([ \-+\.\d]{8})([ \-+\.\d]{8})([ \-+\.\d]{6})([ \-+\.\d]{6}).{10}(.{2})(.{2})`
+
+In example.html you can see them in action. The basic idea behind these regexes is that every group captures always the corresponding number of characters. The expressions are quite permissive and match also illegal PDB lines. Because in the next step columns containing numbers are going to be converted to floats or integers, anyway. That step is likely to produce more meaningful warning messages than could be easily obtained after a mismatch of the regex.
 
 Issues with the PDB format
 ========
@@ -31,41 +41,42 @@ To me the most important problems are:
 
   There is an annoying feature of PDB files: The insertion code (iCode) stored in column 27 is a single character that is actually part of the residue ID. From the docs: 
 
-> Alphabet letters are commonly used for insertion code. The insertion code is used when two residues have the same numbering. The combination of residu enumbering and insertion code defines the unique residue.  
+  > Alphabet letters are commonly used for insertion code. The insertion code is used when two residues have the same numbering. The combination of residu enumbering and insertion code defines the unique residue.  
 
-Insertion codes are routinely used when biologists use black magic to insert one ore more extra residues into the sequence of a protein (insertion mutations). This means, you can have a residue ALA 450 followed by GLY 450A which is followed by LEU 451. If the insertion code is ignored, this would lead to two residues with the same ID. Some tools might just crash, others just skip one of the two residues.
+  Insertion codes are routinely used when biologists use black magic to insert one ore more extra residues into the sequence of a protein (insertion mutations). This means, you can have a residue ALA 450 followed by GLY 450A which is followed by LEU 451. If the insertion code is ignored, this would lead to two residues with the same ID. Some tools might just crash, others just skip one of the two residues.
+
+Also: residue IDs can be negative.
 
 * Non-proteinogenic amino acids
 
- Non-standard amino acids exists. In nature and in experiment. In nature they are rare, in experiments they are routinely inserted by crystallographers. For example they often feel the desire to exchange methionine (MET) with selenomethionie (MSE) because SE produces a strong signal in MAD phasing experiments (http://en.wikipedia.org/wiki/Selenomethionine).
-In PDB files all non-standard amino acids must be encoded in a HETATM line. This is just a normal ATOM line with "ATOM   " being replaced with HETATM. Many programs fail to process these lines at all, leading to false gaps in the sequence.
+  Non-standard amino acids exists. In nature and in experiment. In nature they are rare, in experiments they are routinely inserted by crystallographers. For example they often feel the desire to exchange methionine (MET) with selenomethionie (MSE) because SE produces a strong signal in MAD phasing experiments (http://en.wikipedia.org/wiki/Selenomethionine).
+  In PDB files all non-standard amino acids must be encoded in a HETATM line. This is just a normal ATOM line with "ATOM   " being replaced with HETATM. Many programs fail to process these lines at all, leading to false gaps in the sequence.
 
 * HETATMS in general
 
-You cannot trust HETATMS. Atoms that are stored in a HETATM line can be anything: Water, some chemical compound, a non-standard amino acid - and sometimes even a normal residue (this is probably illegal, but some PDBs do it).
+  You cannot trust HETATMS. Atoms that are stored in a HETATM line can be anything: Water, some chemical compound, a non-standard amino acid - and sometimes even a normal residue (this is probably illegal, but some PDBs do it).
 
 * Large files
  
-Of course, when you get to many atoms, the atom serial will no longer fit into columns 7-11. You will run out chain letters, too.
+  Of course, when you get to many atoms, the atom serial will no longer fit into columns 7-11. You will run out chain letters, too.
 
 * Whitespace
 
-Dont try to split an ATOM line at the spaces. The x, y and z coordinates are formatted as (8.3)-floats. The numbers can touch. These are valid ATOM lines:
+  Dont try to split an ATOM line at the spaces. The x, y and z coordinates are formatted as (8.3)-floats. The numbers can touch. These are valid ATOM lines:
 
-```
-ATOM    663  N   GLY A  96    8886.5548834.0248887.681  1.00 22.44           N  
-ATOM    664  CA  GLY A  96    8885.1778834.3888887.962  1.00 22.21           C  
-ATOM    665  C   GLY A  96    8884.1718833.2568887.921  1.00 21.12           C  
-ATOM    666  O   GLY A  96    8883.0248833.4308888.339  1.00 20.66           O  
-```
+  ```
+  ATOM    663  N   GLY A  96    8886.5548834.0248887.681  1.00 22.44           N  
+  ATOM    664  CA  GLY A  96    8885.1778834.3888887.962  1.00 22.21           C  
+  ATOM    665  C   GLY A  96    8884.1718833.2568887.921  1.00 21.12           C  
+  ATOM    666  O   GLY A  96    8883.0248833.4308888.339  1.00 20.66           O  
+  ```
 
 So why not use a column-oriented approach to parse?
 ========
-Maybe you should! For many applications this might be faster and allow for easier debugging in case of erroneous PDB files. However, regular expressions tend to be portable across different programming languages. 
+Maybe you should! This might allow for easier debugging in case of erroneous PDB files. However, regular expressions tend to be portable across different programming languages. Also, experiments on my machine (with FF 33.0) did not indicate a substring based version being much faster than the regex based. In languages with named groups, the regex approach might also be handier.
 
 TODO
 ========
 * More examples should follow.
 * Prepare testset of problematic PDB files
-* I am sure, I once stubmled over negative residue IDs...
 * Prepare true column-based parsing and compare speed
