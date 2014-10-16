@@ -3,7 +3,7 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
         <meta charset="utf-8">
-    <title>RCSP-Interaction Demo - Parsing of PDB files</title>
+        <title>RCSP-Interaction Demo - Parsing of PDB files</title>
 
         <script type='text/javascript' src="http://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>        
 
@@ -19,7 +19,15 @@
         <script type='text/javascript' src="http://netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
         
         <style type="text/css">
-            body {  padding-top: 50px;}h1,h2,h3,h4 {  color: #810988}
+            body {  padding-top: 50px;}
+            h1,h2,h3,h4 {  color: #810988}
+            .pdbcode {font-family:monospace; cursor:pointer}
+            .regex {font-family:monospace; font-size:small;}
+            /* external link style */
+            a:link[href^="http://"], a.external {
+                background: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAVklEQVR4Xn3PgQkAMQhDUXfqTu7kTtkpd5RA8AInfArtQ2iRXFWT2QedAfttj2FsPIOE1eCOlEuoWWjgzYaB/IkeGOrxXhqB+uA9Bfcm0lAZuh+YIeAD+cAqSz4kCMUAAAAASUVORK5CYII=') no-repeat scroll right center transparent;
+                padding-right: 13px;                
+            }               
         </style>
 </head>
 
@@ -48,19 +56,33 @@
   
   <div>
     <h1>RCSP-Interaction Demo - Parsing of PDB files</h1>
-    <p class="lead">Enter a PDB id (if you dont have any ideas: 1F34 is a nice protein, the current
- default 2OXP is a rather small one. 4N9F is huge with more than 10,000 residues.) Then hit "Load PDB". To display the parsed results, click on the corresponding button.<br>
+    <p class="lead">Enter a PDB id (if you dont have any ideas: <span class="pdbcode">1F34</span> is a nice protein, the current
+ default <span class="pdbcode">2OXP</span> is a rather small one. <span class="pdbcode">4N9F</span> is huge with more than 10,000 residues.) Then hit "Load PDB". To display the parsed results, click on the corresponding button.<br>
 Note that displaying as a HTML table can take quite long (Datatables is not meant to be fed with a single huge bulk of data from the client side. But it works for now.)<br>
 <strong>Note that parsing of the PDB is surprisingly fast!</strong><br>
-For 4N9F with its more than 60,000 atoms, parsing took only 0.5 seconds and displaying as HTML was done after 17 seconds.
+For <span class="pdbcode">4N9F</span> with its more than 60,000 atoms, parsing on my machine took only 0.5 seconds with FF. Only 
+displaying as HTML took as long as 17 seconds. But displaying so many atoms in a single table is rather pointless anyway.<br>
+
+You can chose between three different algorithms. One takes the substrings directly and two apply regular expressions (the first regex 
+deals with linebreaks on its own, the second regex is applied after splitting the string into one string per line).
+On my machine (and with FF) there are no big differences in runtime, the substring-based version being a tiny bit faster.
 </p>
 
+<div style="padding:1em;margin:1em;">
+<strong>Regular expression  (for JS):</strong> <span class="regex" id="regex_js"></span><br>
+<strong>Regular expression with named groups (for python):</strong> <span class="regex" id="regex_py"></span><br><br>
+You can test this regex under <a href="http://regex101.com" target="_blank" class="external">regex101.com</a>
+or use <a href="http://regex101.com/r/cE9yY0/1" target="_blank" class="external">this regex</a> with some random (and not truely valid) data.
+</div>
 
 
 <div class="ui-widget">
-	<button id="bt_load">Load PDB</button>
-	<input id="inputPDBid" type="text" value="2OXP">
-	<button id="bt_display">Display PDB</button>    
+    <input id="inputPDBid" type="text" value="2OXP">
+    <button id="bt_load">Load PDB</button>
+    <label for="select_parser">Select a parser</label>
+    <select name="select_parser" id="select_parser"></select>    
+    <button id="bt_parse">Parse PDB</button>
+    <button id="bt_display">Display PDB</button>    
 </div>
 <br>
 
@@ -71,7 +93,6 @@ For 4N9F with its more than 60,000 atoms, parsing took only 0.5 seconds and disp
 	</div>
 </div>
 
-
 <div id="infolog_outer" class="ui-widget">
 	<div class="ui-state-highlight ui-corner-all" style="margin-top: 20px; padding: 0 .7em;">
 		<span class="ui-icon ui-icon-info" style="float: left; margin-right: .3em;"></span>
@@ -79,7 +100,7 @@ For 4N9F with its more than 60,000 atoms, parsing took only 0.5 seconds and disp
 	</div>
 </div>
 
-		<div class="container">
+<div class="container">
 <table id="example" class="display ui-widget" style="width:100%;">
 	<thead>
 	    <tr>
@@ -95,8 +116,7 @@ For 4N9F with its more than 60,000 atoms, parsing took only 0.5 seconds and disp
 		<th>y</th>
 		<th>t</th>
 		<th>occupancy</th>
-		<th>tempFactor</th>
-		<th>ignored</th>
+		<th>tempfactor</th>
 		<th>element</th>
 		<th>charge</th>
 	    </tr>
@@ -115,10 +135,91 @@ For 4N9F with its more than 60,000 atoms, parsing took only 0.5 seconds and disp
 
 
 
-
-
 <script type="text/javascript"> 
 $(function() {
+
+// Don't use String.trim. It works in FF but not in chrome.
+function trim(s) { if (s === undefined) return ""; 
+try {
+return s.trim(); 
+} catch (e) {
+console.error(s);
+throw(e);
+}
+
+}
+function empty() { return ""; }
+/*
+The following is taken directly from http://www.wwpdb.org/documentation/format33/sect9.html#ATOM
+but a number of n skipped columns between two terms is indicated by +n
+ COLUMNS        DATA  TYPE    FIELD        DEFINITION
+ 1 -  6        Record name   "ATOM  "
+ 7 - 11        Integer       serial       Atom  serial number.
+   +1
+13 - 16        Atom          name         Atom name.
+17             Character     altLoc       Alternate location indicator.
+18 - 20        Residue name  resName      Residue name.
+   +1
+22             Character     chainID      Chain identifier.
+23 - 26        Integer       resSeq       Residue sequence number.
+27             AChar         iCode        Code for insertion of residues.
+   +3
+31 - 38        Real(8.3)     x            Orthogonal coordinates for X in Angstroms.
+39 - 46        Real(8.3)     y            Orthogonal coordinates for Y in Angstroms.
+47 - 54        Real(8.3)     z            Orthogonal coordinates for Z in Angstroms.
+55 - 60        Real(6.2)     occupancy    Occupancy.
+61 - 66        Real(6.2)     tempFactor   Temperature  factor.
+  +10
+77 - 78        LString(2)    element      Element symbol, right-justified.
+79 - 80        LString(2)    charge       Charge  on the atom.
+*/
+
+PDBATOMSPEC = [
+    [ 1,  6,   "(ATOM  |HETATM)",         trim,          "ATorHET"   ],
+    [ 7, 11,   "([ \\d]{5}).",            parseInt,      "serial"    ],
+    [13, 16,   "(.{4})",                  trim,          "name"      ],
+    [17, 17,   "(.)",                     trim,          "altloc"    ],
+    [18, 20,   "(.{3}).",                 trim,          "resname"   ],
+    [22, 22,   "(.)",                     trim,          "chainid"   ],
+    [23, 26,   "([ \\-+\\d]{4})",         parseInt,      "resseq"    ],
+    [27, 27,   "(.).{3}",                 trim,          "icode"     ],
+    [31, 38,   "([ \\-+\\.\\d]{8})",      parseFloat,    "x"         ],
+    [39, 46,   "([ \\-+\\.\\d]{8})",      parseFloat,    "y"         ],
+    [47, 54,   "([ \\-+\\.\\d]{8})",      parseFloat,    "z"         ],
+    [55, 60,   "([ \\-+\\.\\d]{6})",      parseFloat,    "occupancy" ],
+    [61, 66,   "([ \\-+\\.\\d]{6}).{10}", parseFloat,    "tempfactor"],    
+    [77, 78,   "(.{2})",                  trim,          "element"   ],
+    [79, 80,   "(.{2})",                  trim,          "charge"    ],
+];
+      
+constructed_regex_py = "";      
+constructed_regex_js = "";      
+
+for (var i = 0; i < PDBATOMSPEC.length; ++i) {
+    var specline = PDBATOMSPEC[i];
+    var start    = specline[0];
+    var end      = specline[1];
+    var regex    = specline[2];
+    var func     = specline[3];
+    var name     = specline[4];
+    var desc     = specline[5];
+    //console.info(specline);
+    make_function = function(start, end, func, name, desc) { // Example: ( 79, 80, trim(), "charge", "Charge  on the atom." ) 
+        return function(line) {
+                var s = line.substring(start-1, end);
+                var val = func(s);
+                return {name:name, val:val};
+            }
+    }
+    PDBATOMSPEC[i].push(make_function(start, end, func, name, desc));
+    constructed_regex_py += regex.replace("(", "(?P<"+name+">");
+    constructed_regex_js += regex;
+}
+
+$("#regex_py").text(constructed_regex_py);
+$("#regex_js").text(constructed_regex_js);
+
+// test regex online http://regex101.com/r/rV8eK4/1
 
 logRuntimeToConsole = function(f) {
 	return function() {
@@ -127,141 +228,204 @@ logRuntimeToConsole = function(f) {
 	    var end = new Date().getTime();
 	    var time = end - start;
 	    console.info('Execution time of '+f.name+': ' + time + "ms");
+	    window.logged_time = time;
 	    return result;
 	}
 }
 
 PDBDATA = new function() {
-	this.pdbdata = {};
-	this.setPDBdata = function(newDATA) {
-		this.pdbdata = newDATA;
-		//displayPDB(this.pdbdata);
+	this.pdbdata_raw = {};
+	this.pdbdata_parsed = {};
+	
+	this.setPDBdata_raw = function(newPDBdata) {
+            this.pdbdata_raw = newPDBdata;
+            this.pdbdata_parsed = {};
+            $("#bt_parse").button().removeAttr("disabled");   
+            $("#bt_display").button().attr("disabled", "disabled");
+	}
+	
+	this.setPDBdata_parsed = function(newDATA) {
+            this.pdbdata_parsed = newDATA;
+            $("#bt_display").button().removeAttr("disabled");   
 	}
 };
 
-// Don't use String.trim. It works in FF but not in chrome.
-function trim(s) { return s.trim(); };
-var PDBFIELDNAMES = {
-        1: ["ATorHET", trim, ""],
-        2: ["serial", parseInt, NaN],
-        3: ["atom", trim, ""],
-        4: ["altloc", trim, ""],
-        5: ["resname",trim, ""],
-        6: ["chainid",trim, ""],
-        7: ["resseq",parseInt, ""],
-        8: ["icode",trim, ""],
-        9: ["x",parseFloat, NaN],
-       10: ["y",parseFloat, NaN],
-       11: ["z",parseFloat, NaN],
-       12: ["occupancy",parseFloat, NaN],
-       13: ["tempFactor",parseFloat, NaN],
-       14: ["ignored",parseFloat, ""],
-       15: ["element",trim, ""],
-       16: ["charge",parseFloat, NaN],
-    };
-
-    
-$("#errorlog_outer").hide();
-$("#infolog_outer").hide();    
-$("#bt_load").button();
-$("#inputPDBid").autocomplete();
-$("#bt_display").button({ disabled: true });
-
-$(document).ajaxError(function(e,xhr,opt){
-	$("#errorlog").text("Error requesting " + opt.url + ": " + xhr.status + " " + xhr.statusText).show();
-        $("#errorlog_outer").show();
-});
-    
-$("#bt_load").click(function(){
-	var query = $("#inputPDBid").val();
-	var url = "http://www.pdb.org/pdb/files/" + query + ".pdb";
-	var that = this;
-	$("#errorlog_outer").hide();
-	$("#infolog_outer").hide();
-        $("#bt_display").button({ disabled: true });
-
-   	var start = new Date().getTime();
-    
-	$.get(url, function(ret) {
-            var end = new Date().getTime();
-            var time = end - start;
-
-	    console.debug("got pdb data for " + query + " after " + time + " ms" );                        
-            $("#infolog").text("Received PDB data").show();
-            $("#infolog_outer").show();
-	    proccessPDB(ret);
-	    $("#bt_display").button({ disabled: false });
-	    $("#infolog").text("Received and processed PDB data").show();
-
-	}).fail(function() {
-	    console.error("could not retrive PDB data for " + this.pdbcode);
-	})               
-
-});
-    
-$("#bt_display").click(function(){
-	displayPDB(PDBDATA.pdbdata);
-});
-
-function proccessPDB(pdbdata) {
-    console.info("proccessPDB");
-
-    var re = /(ATOM  |HETATM)\s*(\d+)\s([A-Z0-9 ]{4})\s*([\w ])([A-Z]{3})\s(\w)\s*(\d*)([A-Za-z ])\s+([+-]?[\d]+\.\d{3})\s*([+-]?[\d]+\.\d{3})\s*([+-]?[\d]+\.\d{3})\s*([+-]?[\d]+\.\d{2})\s+([+-]?[\d]+\.\d{2})([\s\d+-\.]*)(\w{0,2}).*/gm;
+PARSERFUNCTIONS = {
+     proccessPDB_via_regex: function(pdbdata) {
+        console.info("proccessPDB_via_regex");
         
-    var m;
-    var line_no = 0;
-    var max_lines = 0;
-    var result = [];
-    while ((m = re.exec(pdbdata)) != null) {
-        line_no += 1;
-        if (m.index === re.lastIndex) {
-            re.lastIndex++;
-        }
-        var atom = {};
-        for (var i = 1; i < 17; ++i) {
-            var field = PDBFIELDNAMES[i];
-            var key = field[0];
-            var val = field[1](m[i]);
-            atom[key] = val;
-        }
-        if (line_no < max_lines)
-            console.info(atom);
-        if (line_no == max_lines)
-            console.info("...");
-        result.push(atom);
-    }    
+        var re = new RegExp(constructed_regex_js, "gm");    
+        var m;
+        var line_no = 0;
+        var max_lines = 0;
+        var result = [];
+        while ((m = re.exec(pdbdata)) != null) {
+            line_no += 1;
+            if (m.index === re.lastIndex) {
+                re.lastIndex++;
+            }
+            var atom = {};
+            
+            for (var j = 0; j < PDBATOMSPEC.length; ++j) {              
+                var specline = PDBATOMSPEC[j];      
+                var func     = specline[3];
+                var name     = specline[4];               
+                atom[name] = func(m[j+1]);
+            }
+            result.push(atom);
+        }    
+        return result;
+    },
     
-    PDBDATA.setPDBdata(result);
+     proccessPDB_via_regex_per_line: function(pdbdata) {
+        console.info("proccessPDB_via_regex_per_line");
+                
+        var re = new RegExp(constructed_regex_js);    
+        var max_lines = 0;
+        var result = [];
+        var lines = pdbdata.split("\n");
+        for (var line_no = 0; line_no < lines.length; ++line_no) {
+            var line = lines[line_no];   
+            var recordtype = line.substr(0, 6);
+            if (recordtype != "ATOM  " && recordtype != "HETATM") 
+                continue;      
+      
+            var m = re.exec(line);
+            if (m === null) {    
+                console.error(line);
+                break;
+            }
+            var atom = {};
+            
+            for (var j = 0; j < PDBATOMSPEC.length; ++j) {              
+                var specline = PDBATOMSPEC[j];      
+                var func     = specline[3];
+                var name     = specline[4];               
+                atom[name] = func(m[j+1]);
+            }
+            result.push(atom);
+              
+            }
+        return result;
+    },
+    
+    proccessPDB_via_substr: function(pdbdata) {
+        console.info("proccessPDB_via_substr");
 
+        var result = [];    
+        var lines = pdbdata.split("\n");
+        for (var i = 0; i < lines.length; ++i) {
+            var line = lines[i];
+            var recordtype = line.substr(0, 6);
+            if (recordtype != "ATOM  " && recordtype != "HETATM") 
+                continue;
+           
+            var atom = {};
+            for (var j = 0; j < PDBATOMSPEC.length; ++j) {               
+                var ret = PDBATOMSPEC[j][5](line);             
+                atom[ret.name] = ret.val;
+            }
+
+            result.push(atom);
+        }    
+        return result;
+    },
 };
-proccessPDB = logRuntimeToConsole(proccessPDB);
 
-displayPDB = function(parsedPDB) {
+// add simple logging to all parsers
+for (var name in PARSERFUNCTIONS) {
+    PARSERFUNCTIONS[name] = logRuntimeToConsole(PARSERFUNCTIONS[name]);
+}
+
+
+displayPDB = function() {
+
+    var parsedPDB = PDBDATA.pdbdata_parsed;
     console.info("displayPDB", parsedPDB.length);
     $("#infolog_outer").hide();
     var counter = 1;
+    $('#example').hide();
     $('#example').DataTable().destroy();
     var t = $('#example').DataTable({
 	 "data": parsedPDB,
-         "columns": cols        
-   });
-    
+         "columns": TABLE_COLS        
+    });
+    $('#example').show();
     var i = 0;
 }
 displayPDB = logRuntimeToConsole(displayPDB);
 
-var cols = [];
-$.each(PDBFIELDNAMES, function(i, c) {
-        cols.push({data:c[0]});
+var TABLE_COLS = [];
+$.each(PDBATOMSPEC, function(i, c) {
+        TABLE_COLS.push({data:c[4]});
 });
     
-
+/// Now define the input elements
 var t = $('#example').DataTable({
- "columns": cols        
+ "columns": TABLE_COLS        
 });
 
+$(document).ajaxError(function(e,xhr,opt){
+        $("#errorlog").text("Error requesting " + opt.url + ": " + xhr.status + " " + xhr.statusText).show();
+        $("#errorlog_outer").show();
+});
 
+$("#errorlog_outer").hide();
+$("#infolog_outer").hide();    
+$("button").button();
+$("#inputPDBid").autocomplete();
+$("#bt_parse").button().attr("disabled", "disabled");
+$("#bt_display").button().attr("disabled", "disabled");
 
+$("#bt_load").click(function(){
+        var query = $("#inputPDBid").val();
+        var url = "http://www.pdb.org/pdb/files/" + query + ".pdb";
+        var that = this;
+        $("#errorlog_outer").hide();
+        $("#infolog_outer").hide();
+
+        var start = new Date().getTime();
+    
+        $.get(url, function(ret) {
+            var end = new Date().getTime();
+            var time = end - start;
+
+            var msg = "Received PDB data for " + query + " after " + time + " ms";
+            console.info(msg);     
+            $("#infolog").text(msg).show();            
+            $("#infolog_outer").show();
+            PDBDATA.setPDBdata_raw(ret);            
+        }).fail(function() {
+            var msg = "could not retrive PDB data for " + this.pdbcode;
+            console.error();
+            $("#errorlog_outer").show();
+            $("#errorlog").text(msg).show();
+        })               
+});
+
+$("#bt_parse").click(function(){    
+    var funcname = $("#select_parser").val();
+    var func = PARSERFUNCTIONS[funcname];
+    var result = func(PDBDATA.pdbdata_raw);
+    PDBDATA.setPDBdata_parsed(result);
+    $("#infolog").text("Parsed PDB data after "+  window.logged_time + " ms with " + funcname).show();
+    $("#infolog_outer").show();    
+});
+
+$("#bt_display").click(function(){
+        displayPDB();
+});
+
+var select = $( "#select_parser" ).select();
+for (name in PARSERFUNCTIONS) {
+    select.append("<option>"+name+"</option>")
+}
+
+$(".pdbcode").click(function(e) {
+    $("#inputPDBid").effect("highlight")
+    $("#inputPDBid").val($(e.target).text());
+    
+});
 
 });
 </script>        
