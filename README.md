@@ -71,6 +71,10 @@ Also: residue IDs can be negative.
   ATOM    666  O   GLY A  96    8883.0248833.4308888.339  1.00 20.66           O  
   ```
 
+* Chain IDs
+  
+  Briefly: Chain IDs are meaningless. Don't trust them.
+
 So why not use a column-oriented approach to parse?
 ========
 Maybe you should! This might allow for easier debugging in case of erroneous PDB files. However, regular expressions tend to be portable across different programming languages. Also, experiments on my machine (with FF 33.0) did not indicate a substring based version being much faster than the regex based. In languages with named groups, the regex approach might also be handier.
@@ -79,4 +83,4 @@ TODO
 ========
 * More examples should follow.
 * Prepare testset of problematic PDB files
-* Prepare true column-based parsing and compare speed
+
